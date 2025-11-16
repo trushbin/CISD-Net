@@ -49,61 +49,73 @@ def non_max_suppression(predictions, conf_thres=0.25, iou_thres=0.45,
         scores = pred[:, 4:]  # (N, nc)
         
         # Get max score and class for each prediction
-        class_conf, class_idx = scores.max(dim=1, keepdim=True)  # (N, 1)
+        class_conf, class_idx = scores.max(dim=1)  # (N,)
         
         # Filter by confidence
-        conf_mask = (class_conf.squeeze() >= conf_thres)
+        conf_mask = class_conf >= conf_thres
         
         if not conf_mask.any():
             output.append(torch.zeros((0, 6), device=pred.device))
             continue
         
         # Apply mask
-        boxes = boxes[conf_mask]
-        class_conf = class_conf[conf_mask]
-        class_idx = class_idx[conf_mask]
-        
-        # Combine into single tensor
-        detections = torch.cat([boxes, class_conf, class_idx.float()], dim=1)  # (M, 6)
+        boxes = boxes[conf_mask]  # (M, 4)
+        class_conf = class_conf[conf_mask]  # (M,)
+        class_idx = class_idx[conf_mask]  # (M,)
         
         # NMS per class
         unique_classes = class_idx.unique()
-        keep_detections = []
+        keep_indices = []
         
         for cls in unique_classes:
-            cls_mask = (class_idx == cls).squeeze()
-            cls_dets = detections[cls_mask]
+            cls_mask = class_idx == cls
+            cls_boxes = boxes[cls_mask]
+            cls_conf = class_conf[cls_mask]
+            cls_idx_in_filtered = torch.where(cls_mask)[0]
             
             # Sort by confidence
-            sorted_idx = cls_dets[:, 4].argsort(descending=True)
-            cls_dets = cls_dets[sorted_idx]
+            sorted_idx = cls_conf.argsort(descending=True)
+            cls_boxes = cls_boxes[sorted_idx]
+            cls_idx_sorted = cls_idx_in_filtered[sorted_idx]
             
             # Apply NMS
-            keep = []
-            while cls_dets.shape[0] > 0:
+            keep_cls = []
+            while cls_boxes.shape[0] > 0:
                 # Keep highest confidence detection
-                keep.append(cls_dets[0])
+                keep_cls.append(cls_idx_sorted[0].item())
                 
-                if cls_dets.shape[0] == 1:
+                if cls_boxes.shape[0] == 1:
                     break
                 
                 # Compute IoU with remaining boxes
-                iou = box_iou(cls_dets[0:1, :4], cls_dets[1:, :4], format='xyxy')
+                iou = box_iou(cls_boxes[0:1], cls_boxes[1:], format='xyxy')
                 
                 # Keep boxes with IoU below threshold
                 mask = iou.squeeze() < iou_thres
-                cls_dets = cls_dets[1:][mask]
+                cls_boxes = cls_boxes[1:][mask]
+                cls_idx_sorted = cls_idx_sorted[1:][mask]
             
-            if keep:
-                keep_detections.append(torch.stack(keep))
+            keep_indices.extend(keep_cls)
         
-        # Combine all classes
-        if keep_detections:
-            detections = torch.cat(keep_detections, dim=0)
+        # Get final detections
+        if keep_indices:
+            keep_indices = torch.tensor(keep_indices, device=pred.device)
+            final_boxes = boxes[keep_indices]
+            final_conf = class_conf[keep_indices]
+            final_cls = class_idx[keep_indices]
+            
+            # Combine into output format
+            detections = torch.cat([
+                final_boxes,
+                final_conf.unsqueeze(1),
+                final_cls.unsqueeze(1).float()
+            ], dim=1)  # (K, 6)
             
             # Limit number of detections
             if detections.shape[0] > max_det:
-                detections = detections[:max_det]
+                # Keep top max_det by confidence
+                top_idx = final_conf.argsort(descending=True)[:max_det]
+                detections = detections[top_idx]
             
             output.append(detections)
         else:

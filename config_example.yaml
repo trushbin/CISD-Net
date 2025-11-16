@@ -1,0 +1,33 @@
+# Example Configuration for Training YOLO3D on Custom Dataset
+
+# Data paths
+train_img_dir: ./data/train/images
+train_label_dir: ./data/train/labels
+val_img_dir: ./data/val/images
+val_label_dir: ./data/val/labels
+
+# Model parameters
+num_classes: 80
+width_mult: 1.0
+pretrained: null  # Set to path for transfer learning
+
+# Training parameters
+epochs: 100
+batch_size: 16
+img_size: 640
+lr: 0.01
+weight_decay: 0.0005
+optimizer: SGD  # SGD, Adam, or AdamW
+scheduler: cosine  # cosine, step, or none
+grad_clip: 10.0
+
+# System
+device: cuda
+num_workers: 4
+amp: true  # Automatic mixed precision
+
+# Checkpoints
+save_dir: ./runs/train
+save_interval: 10
+keep_checkpoints: 5
+resume: null  # Set to checkpoint path to resume

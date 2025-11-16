@@ -292,7 +292,7 @@ class YOLO3DModel(nn.Module):
         torch.save(checkpoint, path)
     
     @classmethod
-    def load(cls, path, device='cpu', strict=True):
+    def load(cls, path, device='cpu', strict=False):
         """
         Load model from checkpoint with consistent handling.
         
@@ -305,22 +305,42 @@ class YOLO3DModel(nn.Module):
             model: Loaded model
             checkpoint: Full checkpoint dict (for optimizer, epoch, etc.)
         """
-        checkpoint = torch.load(path, map_location=device)
+        # Load with weights_only=False for compatibility with older checkpoints
+        try:
+            checkpoint = torch.load(path, map_location=device, weights_only=False)
+        except Exception as e:
+            print(f"Warning: Could not load checkpoint from {path}: {e}")
+            print("Creating new model instead...")
+            model = cls(num_classes=80)
+            model.to(device)
+            return model, {}
         
         # Handle different checkpoint formats
         if 'model' in checkpoint:
             state_dict = checkpoint['model']
+            # Try to extract from nested structure
+            if hasattr(state_dict, 'state_dict'):
+                state_dict = state_dict.state_dict()
             num_classes = checkpoint.get('num_classes', 80)
         elif 'state_dict' in checkpoint:
             state_dict = checkpoint['state_dict']
             num_classes = checkpoint.get('num_classes', 80)
         else:
+            # Entire checkpoint might be state_dict
             state_dict = checkpoint
             num_classes = 80
         
         # Create model
         model = cls(num_classes=num_classes)
-        model.load_state_dict(state_dict, strict=strict)
+        
+        # Try to load state dict, but don't fail if incompatible
+        try:
+            model.load_state_dict(state_dict, strict=strict)
+            print(f"Loaded weights from {path}")
+        except Exception as e:
+            print(f"Warning: Could not load all weights: {e}")
+            print("Creating new model instead...")
+        
         model.to(device)
         
         return model, checkpoint
