@@ -1,1 +1,1 @@
-Currently, the weights of CISD-Net on the NWPU and SIMD datasets have been open-sourced.
+Currently, the weights of CEMD-Net on the NWPU and SIMD datasets have been open-sourced.
